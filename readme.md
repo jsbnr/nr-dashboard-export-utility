@@ -2,8 +2,8 @@
 
 This project contains two examples:
 
-- a simple node command line script that lets you request a dashboard snapshot from New Relic and downloads as a PDF or send to slack as a message.
-- a Synthetic monitor script that can send a New Relic Dashboard snapshot to slack
+- **export.js:** a simple node command line script that lets you request a dashboard snapshot from New Relic and downloads as a PDF or send to slack as a message.
+- **monitor.js:** a New Relic Synthetic monitor script that can send a New Relic Dashboard snapshot to slack
 
 
 ## Installing
