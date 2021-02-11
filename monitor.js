@@ -1,6 +1,6 @@
-const DASH_GUID     = "MjQ2MDk4N3xWSVp8REFTSEJPQVJEfDE2ODg0NDM"  // GUID of dashboard
-const SLACK_SUBJECT = "Public API Status"                       // a title (optional)
-const SLACK_LINK    = "https://one.nr/0e1wZyE2LQ6"              // link to dashboard (or another!) (optional)
+const DASH_GUID     = "GUID-GOES-HERE"  // GUID of dashboard
+const SLACK_SUBJECT = "Your subject goes here"                       // a title (optional)
+const SLACK_LINK    = "https://one.nr/your-link-here"              // link to dashboard (or another!) (optional)
 const NR_HOST       = "https://api.newrelic.com/graphql"        // Using EU datacenter? use instead: https://api.eu.newrelic.com/graphiql
 
 const API_KEY       = $secure.DASHEXP_API_KEY       // New Relic personal API Key for creating snapshot via graphQL
