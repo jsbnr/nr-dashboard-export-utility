@@ -46,6 +46,11 @@ const {argv} = require('yargs')
   type: 'string',
   description: 'Slack link'
 })
+.option('width', {
+  type: 'number',
+  default: 2000,
+  description: 'Width of snapshot in pixels'
+})
 
 const DASH_GUID = argv['guid']  
 const API_KEY = argv['apikey']   
@@ -55,6 +60,8 @@ const NR_HOST   = "https://api.newrelic.com/graphql" // Using EU datacenter? use
 const SLACK_URL = argv['slack'] 
 const SLACK_SUBJECT = argv['subject'] 
 const SLACK_LINK = argv['link'] 
+const WIDTH=argv['width']  //width of image
+
 
 
 var https = require('https');
@@ -259,7 +266,7 @@ async function run() {
 
         } else {
           let filename=`${OUTPUT_FILENAME}${pages.length>1 ? "_"+idx : ""}.${OUTPUT_FORMAT}`
-          download(PDF_URL.replace("format=PDF",`format=${OUTPUT_FORMAT.toUpperCase()}`),filename,(e)=>{
+          download(PDF_URL.replace("format=PDF",`format=${OUTPUT_FORMAT.toUpperCase()}`)+`&width=${WIDTH}`,filename,(e)=>{
             if(e) {
               console.log(`Something went wrong with download of file ${filename}`)
             } else {
