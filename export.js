@@ -26,15 +26,20 @@ const {argv} = require('yargs')
 })
 .option('filename', {
   type: 'string',
-  default: 'dashboard.pdf',
-  description: 'Export filename'
+  default: 'dashboard',
+  description: 'Export filename prefix'
+})
+.option('format', {
+  type: 'string',
+  default: 'pdf',
+  description: 'File output format - png or pdf'
 })
 .option('slack', {
   type: 'string',
   description: 'Slack webhook URL'
 })
 .option('subject', {
-  type: 'string',
+  type: '',
   description: 'Slack subject'
 })
 .option('link', {
@@ -44,16 +49,24 @@ const {argv} = require('yargs')
 
 const DASH_GUID = argv['guid']  
 const API_KEY = argv['apikey']   
-const OUTPUT_FILENAME = argv['filename']   
+const OUTPUT_FILENAME = argv['filename']  
+const OUTPUT_FORMAT = argv['format']   
 const NR_HOST   = "https://api.newrelic.com/graphql" // Using EU datacenter? use instead: https://api.eu.newrelic.com/graphiql
 const SLACK_URL = argv['slack'] 
 const SLACK_SUBJECT = argv['subject'] 
 const SLACK_LINK = argv['link'] 
 
+
 var https = require('https');
 var fs = require('fs');
 var $http = require("request"); 
 
+
+async function asyncForEach(array, callback) {
+  for (let index = 0; index < array.length; index++) {
+    await callback(array[index], index, array);
+  }
+}
 
 var download = function(url, dest, cb) {
   var file = fs.createWriteStream(dest);
@@ -89,10 +102,68 @@ var generateSnapshot = function(apikey,guid) {
           try {
             let bodyObj=JSON.parse(body)
             if(bodyObj.data && bodyObj.data && bodyObj.data.dashboardCreateSnapshotUrl) {
-              console.log("Snapshot URL: ",bodyObj.data.dashboardCreateSnapshotUrl)
+              //console.log("Snapshot URL: ",bodyObj.data.dashboardCreateSnapshotUrl)
               resolve(bodyObj.data.dashboardCreateSnapshotUrl)
             } else {
               reject("Snapshot URL not found in body: "+body)
+            }
+            
+          } catch (e) {
+            reject(e)
+          }
+      }
+    });
+  })
+
+}
+
+
+var getDashboardPages = function(apikey,guid) {
+  return new Promise((resolve, reject) => {
+    let options = {
+      url: NR_HOST,
+      method: 'POST',
+      headers : {
+        "Content-Type": "application/json",
+        "API-Key": apikey
+      },
+      body: JSON.stringify({
+        "query": `{
+          actor {
+            entitySearch(query: "parentId ='${guid}' or id ='${guid}'") {
+              results {
+                entities {
+                  guid
+                  name
+                  ... on DashboardEntityOutline {
+                    guid
+                    name
+                    dashboardParentGuid
+                  }
+                }
+              }
+            }
+          }
+        }
+        `
+      })
+    }
+
+    $http(options, function callback(error, response, body) {
+      if(error) {
+        reject(e)
+      } else {
+          try {
+            let bodyObj=JSON.parse(body)
+            let entities=bodyObj.data.actor.entitySearch.results.entities
+            if(entities.length > 0 ) {
+              if(entities.length>1) {
+                resolve(entities.filter((e)=>{return e.dashboardParentGuid!==null}))
+              } else {
+                resolve([entities[0]]) //one pager
+              } 
+            } else {
+              reject("Error. No entities returned from search")
             }
             
           } catch (e) {
@@ -162,7 +233,6 @@ var notifySlack = function(url,subject, imageUrl, link) {
       })
     }
 
-    console.log("Posting message to slack...")
     $http(options, function callback(error, response, body) {
       if(error) {
         reject(e)
@@ -176,21 +246,31 @@ var notifySlack = function(url,subject, imageUrl, link) {
 
 
 async function run() {
-  let PDF_URL = await generateSnapshot(API_KEY,DASH_GUID)
-  if(SLACK_URL) {
+  let pages=await getDashboardPages(API_KEY,DASH_GUID)
+  
+  await asyncForEach(pages,async (page,zeroIdx)=>{
+      let idx=zeroIdx+1
+      let PDF_URL = await generateSnapshot(API_KEY,page.guid)
+      if(SLACK_URL) {
 
-    const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")
-    await notifySlack(SLACK_URL,SLACK_SUBJECT,PNG_URL,SLACK_LINK)
+        const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")
+        console.log(`Posting page '${page.name}' to slack...`)
+        await notifySlack(SLACK_URL,`${SLACK_SUBJECT}${SLACK_SUBJECT=="" ? "" : " - "}${page.name}`,PNG_URL,SLACK_LINK)
 
-    } else {
-      download(PDF_URL,OUTPUT_FILENAME,(e)=>{
-        if(e) {
-          console.log("Something went wrong with download of PDF")
         } else {
-          console.log(`File saved to ${OUTPUT_FILENAME}`)
+          let filename=`${OUTPUT_FILENAME}${pages.length>1 ? "_"+idx : ""}.${OUTPUT_FORMAT}`
+          download(PDF_URL.replace("format=PDF",`format=${OUTPUT_FORMAT.toUpperCase()}`),filename,(e)=>{
+            if(e) {
+              console.log(`Something went wrong with download of file ${filename}`)
+            } else {
+              console.log(`Page '${page.name}' saved to ${filename}`)
+            }
+          })
         }
-      })
-    }
+
+  })
+  
+
 
 
 }
