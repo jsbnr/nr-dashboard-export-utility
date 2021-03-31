@@ -6,13 +6,79 @@ const SLACK_LINK    = "https://one.nr/your-dashboard-link"              // link 
 const ACCOUNT_ID     = "0" 
 const POLICY_NAME    = "" //name of your alert policy
 
-
+const WIDTH         = 2000 //width of snapshot
 const NR_HOST       = "https://api.newrelic.com/graphql"        // Using EU datacenter? use instead: https://api.eu.newrelic.com/graphiql
 const API_KEY       = $secure.DASHEXP_API_KEY       // New Relic personal API Key for creating snapshot via graphQL
 const SLACK_URL     = $secure.DASHEXP_SLACK_URL     // Slack webhook URL,e.g.  https://hooks.slack.com/services/xxxxx
 
 const assert = require("assert")
 var $http = require("request"); 
+
+
+async function asyncForEach(array, callback) {
+  for (let index = 0; index < array.length; index++) {
+    await callback(array[index], index, array);
+  }
+}
+
+
+
+var getDashboardPages = function(apikey,guid) {
+  return new Promise((resolve, reject) => {
+    let options = {
+      url: NR_HOST,
+      method: 'POST',
+      headers : {
+        "Content-Type": "application/json",
+        "API-Key": apikey
+      },
+      body: JSON.stringify({
+        "query": `{
+          actor {
+            entitySearch(query: "parentId ='${guid}' or id ='${guid}'") {
+              results {
+                entities {
+                  guid
+                  name
+                  ... on DashboardEntityOutline {
+                    guid
+                    name
+                    dashboardParentGuid
+                  }
+                }
+              }
+            }
+          }
+        }
+        `
+      })
+    }
+
+    $http(options, function callback(error, response, body) {
+      if(error) {
+        reject(error)
+      } else {
+          try {
+            let bodyObj=JSON.parse(body)
+            let entities=bodyObj.data.actor.entitySearch.results.entities
+            if(entities.length > 0 ) {
+              if(entities.length>1) {
+                resolve(entities.filter((e)=>{return e.dashboardParentGuid!==null}))
+              } else {
+                resolve([entities[0]]) //one pager
+              } 
+            } else {
+              reject("Error. No entities returned from search")
+            }
+            
+          } catch (e) {
+            reject(e)
+          }
+      }
+    });
+  })
+
+}
 
 
 var generateSnapshot = function(apikey,guid) {
@@ -31,7 +97,7 @@ var generateSnapshot = function(apikey,guid) {
 
     $http(options, function callback(error, response, body) {
       if(error) {
-        reject(e)
+        reject(error)
       } else {
           try {
             let bodyObj=JSON.parse(body)
@@ -81,7 +147,7 @@ var checkAlertState = function(apikey,accountId,policyName) {
 
     $http(options, function callback(error, response, body) {
       if(error) {
-        reject(e)
+        reject(error)
       } else {
           try {
             let bodyObj=JSON.parse(body)
@@ -174,7 +240,7 @@ var notifySlack = function(url,subject, imageUrl, link) {
     console.log("Posting message to slack...")
     $http(options, function callback(error, response, body) {
       if(error) {
-        reject(e)
+        reject(error)
       } else {
           if(response.statusCode==200) {
             resolve()
@@ -204,10 +270,18 @@ async function run() {
   }
 
   if(proceed) {
-    console.log("Generating snapshot")
-    const PDF_URL = await generateSnapshot(API_KEY,DASH_GUID)
-    const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")
-    await notifySlack(SLACK_URL,SLACK_SUBJECT,PNG_URL,SLACK_LINK)
+    console.log("Generating snapshots")
+    let pages=await getDashboardPages(API_KEY,DASH_GUID)
+    await asyncForEach(pages,async (page,zeroIdx)=>{
+      let idx=zeroIdx+1
+      let PDF_URL = await generateSnapshot(API_KEY,page.guid)
+
+        const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")+`&width=${WIDTH}`
+        console.log(`Posting page '${page.name}' to slack...`)
+        await notifySlack(SLACK_URL,`${SLACK_SUBJECT}${SLACK_SUBJECT=="" ? "" : " - "}${page.name}`,PNG_URL,SLACK_LINK)
+
+    
+    })
   } 
   assert.ok(true)
 }

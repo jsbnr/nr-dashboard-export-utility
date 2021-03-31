@@ -17,7 +17,7 @@ To run you need a valid user license key and the GUID of the dashboard. (To find
 
 Download as PDF:
 ```
-./export.js --guid "dashboard-guid-here" --apikey "api-key-here" --filename "myfilename.pdf" 
+./export.js --guid "dashboard-guid-here" --apikey "api-key-here" --filename "myfilename" --format="pdf" 
 ```
 
 Slack:
@@ -25,3 +25,5 @@ Slack:
 ./export.js --guid "dashboard-guid-here" --apikey "api-key-here" --slack "https://slack-webhook-url" --subject "Example subject line" --link "https://some-link-here"
 ```
 
+## Multi-page dashboards
+For multiple page dashboards, each page will be sent to slack or written to file seperately. For slack the subject line will have the dashboard title appended. For file output the files will be numbered in sequence.
