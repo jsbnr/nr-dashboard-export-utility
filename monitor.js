@@ -6,7 +6,7 @@ const SLACK_LINK    = "https://one.nr/your-dashboard-link"              // link 
 const ACCOUNT_ID     = "0" 
 const POLICY_NAME    = "" //name of your alert policy
 
-
+const WIDTH         = 2000 //width of snapshot
 const NR_HOST       = "https://api.newrelic.com/graphql"        // Using EU datacenter? use instead: https://api.eu.newrelic.com/graphiql
 const API_KEY       = $secure.DASHEXP_API_KEY       // New Relic personal API Key for creating snapshot via graphQL
 const SLACK_URL     = $secure.DASHEXP_SLACK_URL     // Slack webhook URL,e.g.  https://hooks.slack.com/services/xxxxx
@@ -56,7 +56,7 @@ var getDashboardPages = function(apikey,guid) {
 
     $http(options, function callback(error, response, body) {
       if(error) {
-        reject(e)
+        reject(error)
       } else {
           try {
             let bodyObj=JSON.parse(body)
@@ -97,7 +97,7 @@ var generateSnapshot = function(apikey,guid) {
 
     $http(options, function callback(error, response, body) {
       if(error) {
-        reject(e)
+        reject(error)
       } else {
           try {
             let bodyObj=JSON.parse(body)
@@ -147,7 +147,7 @@ var checkAlertState = function(apikey,accountId,policyName) {
 
     $http(options, function callback(error, response, body) {
       if(error) {
-        reject(e)
+        reject(error)
       } else {
           try {
             let bodyObj=JSON.parse(body)
@@ -240,7 +240,7 @@ var notifySlack = function(url,subject, imageUrl, link) {
     console.log("Posting message to slack...")
     $http(options, function callback(error, response, body) {
       if(error) {
-        reject(e)
+        reject(error)
       } else {
           if(response.statusCode==200) {
             resolve()
@@ -276,7 +276,7 @@ async function run() {
       let idx=zeroIdx+1
       let PDF_URL = await generateSnapshot(API_KEY,page.guid)
 
-        const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")
+        const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")+`&width=${WIDTH}`
         console.log(`Posting page '${page.name}' to slack...`)
         await notifySlack(SLACK_URL,`${SLACK_SUBJECT}${SLACK_SUBJECT=="" ? "" : " - "}${page.name}`,PNG_URL,SLACK_LINK)
 

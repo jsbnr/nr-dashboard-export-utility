@@ -39,7 +39,8 @@ const {argv} = require('yargs')
   description: 'Slack webhook URL'
 })
 .option('subject', {
-  type: '',
+  type: 'string',
+  default: '',
   description: 'Slack subject'
 })
 .option('link', {
@@ -228,7 +229,6 @@ var notifySlack = function(url,subject, imageUrl, link) {
     )
    }
 
-
     let options = {
       url: url,
       method: 'POST',
@@ -260,7 +260,7 @@ async function run() {
       let PDF_URL = await generateSnapshot(API_KEY,page.guid)
       if(SLACK_URL) {
 
-        const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")
+        const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")+`&width=${WIDTH}`
         console.log(`Posting page '${page.name}' to slack...`)
         await notifySlack(SLACK_URL,`${SLACK_SUBJECT}${SLACK_SUBJECT=="" ? "" : " - "}${page.name}`,PNG_URL,SLACK_LINK)
 
