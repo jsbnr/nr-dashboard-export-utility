@@ -175,7 +175,7 @@ const notifySlack = async function(url, subject, imageUrl, link) {
       responseType: 'text'  // Expecting a plain "OK" response as text
     });
 
-    if (response.body === "OK" || (response.body === "ok") {
+    if (response.body === "OK" || response.body === "ok") {
       console.log("Message successfully posted to Slack.");
     } else {
       throw new Error("Unexpected response: " + response.body);
