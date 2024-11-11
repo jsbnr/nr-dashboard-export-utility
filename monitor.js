@@ -12,7 +12,7 @@ const API_KEY       = $secure.DASHEXP_API_KEY       // New Relic personal API Ke
 const SLACK_URL     = $secure.DASHEXP_SLACK_URL     // Slack webhook URL,e.g.  https://hooks.slack.com/services/xxxxx
 
 const assert = require("assert")
-var $http = require("request"); 
+const got = require("got");
 
 
 async function asyncForEach(array, callback) {
@@ -21,19 +21,16 @@ async function asyncForEach(array, callback) {
   }
 }
 
-
-
-var getDashboardPages = function(apikey,guid) {
-  return new Promise((resolve, reject) => {
-    let options = {
-      url: NR_HOST,
-      method: 'POST',
-      headers : {
+const getDashboardPages = async (apikey, guid) => {
+  try {
+    console.log("In getDashboardPages: apiKey: " + apikey + " guid: " + guid);
+    const response = await got.post(NR_HOST, {
+      headers: {
         "Content-Type": "application/json",
         "API-Key": apikey
       },
-      body: JSON.stringify({
-        "query": `{
+      json: {
+        query: `{
           actor {
             entitySearch(query: "parentId ='${guid}' or id ='${guid}'") {
               results {
@@ -49,136 +46,82 @@ var getDashboardPages = function(apikey,guid) {
               }
             }
           }
-        }
-        `
-      })
-    }
-
-    $http(options, function callback(error, response, body) {
-      if(error) {
-        reject(error)
-      } else {
-          try {
-            let bodyObj=JSON.parse(body)
-            let entities=bodyObj.data.actor.entitySearch.results.entities
-            if(entities.length > 0 ) {
-              if(entities.length>1) {
-                resolve(entities.filter((e)=>{return e.dashboardParentGuid!==null}))
-              } else {
-                resolve([entities[0]]) //one pager
-              } 
-            } else {
-              reject("Error. No entities returned from search")
-            }
-            
-          } catch (e) {
-            reject(e)
-          }
-      }
+        }`
+      },
+      responseType: "json"
     });
-  })
 
-}
+    const entities = response.body.data.actor.entitySearch.results.entities;
+    if (!entities || entities.length === 0) {
+      throw new Error("No entities found");
+    }
+    return entities.length > 1
+      ? entities.filter(e => e.dashboardParentGuid !== null)
+      : [entities[0]];
 
+  } catch (error) {
+    throw new Error("Error fetching dashboard pages: " + error.message);
+  }
+};
 
-var generateSnapshot = function(apikey,guid) {
-  return new Promise((resolve, reject) => {
-    let options = {
-      url: NR_HOST,
-      method: 'POST',
-      headers : {
+const generateSnapshot = async (apikey, guid) => {
+  try {
+    const response = await got.post(NR_HOST, {
+      headers: {
         "Content-Type": "application/json",
         "API-Key": apikey
       },
-      body: JSON.stringify({
-        "query": `mutation { dashboardCreateSnapshotUrl(guid: \"${guid}\")}`
-      })
-    }
-
-    $http(options, function callback(error, response, body) {
-      if(error) {
-        reject(error)
-      } else {
-          try {
-            let bodyObj=JSON.parse(body)
-            if(bodyObj.data && bodyObj.data && bodyObj.data.dashboardCreateSnapshotUrl) {
-              console.log("Snapshot URL: ",bodyObj.data.dashboardCreateSnapshotUrl)
-              resolve(bodyObj.data.dashboardCreateSnapshotUrl)
-            } else {
-              reject("Snapshot URL not found in body: "+body)
-            }
-            
-          } catch (e) {
-            reject(e)
-          }
-      }
+      json: {
+        query: `mutation { dashboardCreateSnapshotUrl(guid: \"${guid}\") }`
+      },
+      responseType: "json"
     });
-  })
 
-}
+    const snapshotUrl = response.body.data.dashboardCreateSnapshotUrl;
+    if (!snapshotUrl) throw new Error("Snapshot URL not found in response");
+    console.log("Snapshot URL:", snapshotUrl);
+    return snapshotUrl;
 
-                                      //2460987
-var checkAlertState = function(apikey,accountId,policyName) {
-  return new Promise((resolve, reject) => {
+  } catch (error) {
+    throw new Error("Error generating snapshot: " + error.message);
+  }
+};
 
-    //this uses NRAiIncident, which isnt great for policies with +1 condition. Consider adding a webhook and querying that instead for proper policy state.
-    let gql=`{
-      actor {
-        account(id: ${accountId}) {
-          nrql(query: "select latest(event) as 'state' from NrAiIncident where policyName='${policyName}'") {
-            results
-          }
+const checkAlertState = async (apikey, accountId, policyName) => {
+  const gql = `{
+    actor {
+      account(id: ${accountId}) {
+        nrql(query: "select latest(event) as 'state' from NrAiIncident where policyName='${policyName}'") {
+          results
         }
       }
-    }`
+    }
+  }`;
+
+  try {
+    const response = await got.post(NR_HOST, {
+      headers: {
+        "Content-Type": "application/json",
+        "API-Key": apikey
+      },
+      json: { query: gql },
+      responseType: "json"
+    });
+
+    const state = response.body.data.actor.account.nrql.results[0]?.state;
+    if (!state) throw new Error("No NRQL data received for results.");
+    return state;
+
+  } catch (error) {
+    throw new Error("Error checking alert state: " + error.message);
+  }
+};
+
+const notifySlack = async function(url, subject, imageUrl, link) {
+  try {
+    let blocks = [];
     
-
-    let options = {
-      url: NR_HOST,
-      method: 'POST',
-      headers : {
-        "Content-Type": "application/json",
-        "API-Key": apikey
-      },
-      body: JSON.stringify({
-        "query": gql
-      })
-    }
-
-    $http(options, function callback(error, response, body) {
-      if(error) {
-        reject(error)
-      } else {
-          try {
-            let bodyObj=JSON.parse(body)
-            if(  bodyObj.data 
-              && bodyObj.data.actor 
-              && bodyObj.data.actor.account 
-              && bodyObj.data.actor.account.nrql 
-              && bodyObj.data.actor.account.nrql.results 
-              && bodyObj.data.actor.account.nrql.results[0]
-              && bodyObj.data.actor.account.nrql.results[0].state
-            ) {
-              resolve(bodyObj.data.actor.account.nrql.results[0].state)
-            } else {
-              reject("No NRQL data received for results.\n" + body)
-            }
-            
-          } catch (e) {
-            reject(e)
-          }
-      }
-    });
-  })
-
-}
-
-
-var notifySlack = function(url,subject, imageUrl, link) {
-  return new Promise((resolve, reject) => {
-
-    let blocks=[]
-    if(subject) {  //add a subject title if there is one
+    if (subject) {  // Add a subject title if there is one
       blocks.push({
         "type": "header",
         "text": {
@@ -186,25 +129,24 @@ var notifySlack = function(url,subject, imageUrl, link) {
           "text": subject,
           "emoji": true
         }
-      })
+      });
     }
-    if(imageUrl) {
-      blocks.push(
-        {
-          "type": "image",
-          "title": {
-            "type": "plain_text",
-            "text": "Dashboard snapshot",
-            "emoji": true
+
+    if (imageUrl) {
+      blocks.push({
+        "type": "image",
+        "title": {
+          "type": "plain_text",
+          "text": "Dashboard snapshot",
+          "emoji": true
         },
-          "image_url": imageUrl,
-          "alt_text": subject
-        }
-      )
-   }
-   if(link){
-    blocks.push(
-      {
+        "image_url": imageUrl,
+        "alt_text": subject
+      });
+    }
+
+    if (link) {
+      blocks.push({
         "type": "section",
         "text": {
           "type": "mrkdwn",
@@ -221,73 +163,65 @@ var notifySlack = function(url,subject, imageUrl, link) {
           "url": link,
           "action_id": "button-action"
         }
-      }
-    )
-   }
-
-
-    let options = {
-      url: url,
-      method: 'POST',
-      headers : {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        "blocks": blocks
-      })
+      });
     }
 
-    console.log("Posting message to slack...")
-    $http(options, function callback(error, response, body) {
-      if(error) {
-        reject(error)
-      } else {
-          if(response.statusCode==200) {
-            resolve()
-          } else {
-              reject("Error posting to slack. "+body)
-          }
-      }
+    console.log("Posting message to Slack...");
+    
+    const response = await got.post(url, {
+      json: {
+        blocks: blocks
+      },
+      responseType: 'text'  // Expecting a plain "OK" response as text
     });
-  })
 
-}
+    if (response.body === "OK" || (response.body === "ok") {
+      console.log("Message successfully posted to Slack.");
+    } else {
+      throw new Error("Unexpected response: " + response.body);
+    }
+  } catch (error) {
+    console.error("Error notifying Slack:", error.message);
+    throw new Error("Error notifying Slack: " + error.message);
+  }
+};
 
 
 async function run() {
-  let checkState = (POLICY_NAME && POLICY_NAME!='')  ? true : false
-  let proceed = !checkState
-
-  if(checkState) {
-    console.log("Checking alert state for "+POLICY_NAME)
-    let state = await checkAlertState(API_KEY,ACCOUNT_ID,POLICY_NAME)
-    if(state=='open') {
-      console.log("Alert was discovered")
-      proceed=true
-    } else {
-      console.log("No alerts discovered")
+  console.log("In Run method");
+  try {
+    const checkState = POLICY_NAME && POLICY_NAME !== "";
+    let proceed = !checkState;
+console.log("checkState: " + checkState);
+    console.log("Proceed: " + proceed);
+    if (checkState) {
+      console.log("Checking alert state for " + POLICY_NAME);
+      const state = await checkAlertState(API_KEY, ACCOUNT_ID, POLICY_NAME);
+      if (state === "open") {
+        console.log("Alert was discovered");
+        proceed = true;
+      } else {
+        console.log("No alerts discovered");
+      }
     }
+
+    if (proceed) {
+      console.log("Generating snapshots");
+      const pages = await getDashboardPages(API_KEY, DASH_GUID);
+      await asyncForEach(pages, async (page, zeroIdx) => {
+        const PDF_URL = await generateSnapshot(API_KEY, page.guid);
+        const PNG_URL = PDF_URL.replace("format=PDF", "format=PNG") + `&width=${WIDTH}`;
+        console.log(`Posting page '${page.name}' to Slack...`);
+        await notifySlack(SLACK_URL, `${SLACK_SUBJECT}${SLACK_SUBJECT ? " - " : ""}${page.name}`, PNG_URL, SLACK_LINK);
+      });
+    }
+
+    assert.ok(true);
+
+  } catch (error) {
+    console.error("Error occurred!\n\n", error);
+    assert.fail("Error occurred: " + error.message);
   }
-
-  if(proceed) {
-    console.log("Generating snapshots")
-    let pages=await getDashboardPages(API_KEY,DASH_GUID)
-    await asyncForEach(pages,async (page,zeroIdx)=>{
-      let idx=zeroIdx+1
-      let PDF_URL = await generateSnapshot(API_KEY,page.guid)
-
-        const PNG_URL=PDF_URL.replace("format=PDF","format=PNG")+`&width=${WIDTH}`
-        console.log(`Posting page '${page.name}' to slack...`)
-        await notifySlack(SLACK_URL,`${SLACK_SUBJECT}${SLACK_SUBJECT=="" ? "" : " - "}${page.name}`,PNG_URL,SLACK_LINK)
-
-    
-    })
-  } 
-  assert.ok(true)
 }
 
-run().catch((e)=>{
-  console.log("Error occurred!\n\n",e)
-  assert.fail("Error occured")
-})
-
+run();
